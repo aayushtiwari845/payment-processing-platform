@@ -1,0 +1,16 @@
+.idea/
+.vscode/
+*.iml
+target/
+build/
+.DS_Store
+node_modules/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+coverage/
+dist/
+logs/

@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: transaction-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment_platform?currentSchema=transaction_service}
+    username: ${DB_USERNAME:payment_user}
+    password: ${DB_PASSWORD:payment_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    default-schema: transaction_service
+    schemas:
+      - transaction_service
+    create-schemas: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+server:
+  port: ${SERVER_PORT:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+clients:
+  account-service:
+    base-url: ${ACCOUNT_SERVICE_BASE_URL:http://localhost:8081}

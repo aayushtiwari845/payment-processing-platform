@@ -1,0 +1,15 @@
+name: ci-placeholder
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  scaffold-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report scaffold state
+        run: echo "Replace this placeholder with Week 6 test/build pipeline."

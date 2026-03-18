@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      routes:
+        - id: account-service
+          uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/accounts/**
+          filters:
+            - CircuitBreaker=accountCircuitBreaker
+        - id: transaction-service
+          uri: ${TRANSACTION_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/transactions/**
+          filters:
+            - CircuitBreaker=transactionCircuitBreaker
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      accountCircuitBreaker:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+      transactionCircuitBreaker:
+        slidingWindowSize: 10
+        failureRateThreshold: 50

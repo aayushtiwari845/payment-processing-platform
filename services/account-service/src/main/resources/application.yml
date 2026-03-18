@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: account-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment_platform?currentSchema=account_service}
+    username: ${DB_USERNAME:payment_user}
+    password: ${DB_PASSWORD:payment_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    default-schema: account_service
+    schemas:
+      - account_service
+    create-schemas: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

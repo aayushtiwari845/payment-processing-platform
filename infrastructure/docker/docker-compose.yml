@@ -1,0 +1,190 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    environment:
+      POSTGRES_USER: payment_user
+      POSTGRES_PASSWORD: payment_password
+      POSTGRES_DB: payment_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_user -d payment_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: payment-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: payment-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: payment-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "cub kafka-ready -b localhost:9092 1 20"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: payment-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: payment-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+  account-service:
+    build:
+      context: ../..
+      dockerfile: services/account-service/Dockerfile
+    container_name: payment-account-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/payment_platform?currentSchema=account_service
+      DB_USERNAME: payment_user
+      DB_PASSWORD: payment_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+
+  transaction-service:
+    build:
+      context: ../..
+      dockerfile: services/transaction-service/Dockerfile
+    container_name: payment-transaction-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      account-service:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/payment_platform?currentSchema=transaction_service
+      DB_USERNAME: payment_user
+      DB_PASSWORD: payment_password
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ACCOUNT_SERVICE_BASE_URL: http://account-service:8081
+      SERVER_PORT: 8082
+    ports:
+      - "8082:8082"
+
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: payment-api-gateway
+    depends_on:
+      account-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      TRANSACTION_SERVICE_URL: http://transaction-service:8082
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+
+  notification-service:
+    build:
+      context: ../..
+      dockerfile: services/notification-service/Dockerfile
+    container_name: payment-notification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      account-service:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ACCOUNT_SERVICE_BASE_URL: http://account-service:8081
+      SERVER_PORT: 8083
+    ports:
+      - "8083:8083"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: payment-prometheus
+    depends_on:
+      account-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      api-gateway:
+        condition: service_started
+      fraud-detection-service:
+        condition: service_started
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  fraud-detection-service:
+    build:
+      context: ../..
+      dockerfile: services/fraud-detection-service/Dockerfile
+    container_name: payment-fraud-detection-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      transaction-service:
+        condition: service_started
+    environment:
+      FRAUD_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      FRAUD_TRANSACTION_SERVICE_BASE_URL: http://transaction-service:8082
+      FRAUD_KAFKA_ENABLED: "true"
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  redis_data:
