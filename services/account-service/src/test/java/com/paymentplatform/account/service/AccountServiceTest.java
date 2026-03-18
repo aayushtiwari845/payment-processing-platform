@@ -27,6 +27,8 @@ import static org.mockito.Mockito.when;
 class AccountServiceTest {
 
     private static final RequestAuthContext ADMIN_AUTH = new RequestAuthContext("admin", java.util.List.of("ADMIN"), false);
+    private static final RequestAuthContext CUSTOMER_AUTH = new RequestAuthContext("customer@example.com", java.util.List.of("CUSTOMER"), false);
+    private static final RequestAuthContext INTERNAL_AUTH = new RequestAuthContext("internal", java.util.List.of(), true);
 
     @Mock
     private AccountRepository accountRepository;
@@ -112,6 +114,48 @@ class AccountServiceTest {
         Account updated = accountService.adjustBalance(accountId, BigDecimal.valueOf(-4), ADMIN_AUTH);
 
         assertThat(updated.getBalance()).isEqualByComparingTo("6");
+    }
+
+    @Test
+    void shouldAllowCustomerToReadOwnAccount() {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account();
+        account.setId(accountId);
+        account.setEmail("customer@example.com");
+
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+
+        Account result = accountService.getAccount(accountId, CUSTOMER_AUTH);
+
+        assertThat(result).isSameAs(account);
+    }
+
+    @Test
+    void shouldRejectCustomerReadingAnotherUsersAccount() {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account();
+        account.setId(accountId);
+        account.setEmail("other@example.com");
+
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> accountService.getAccount(accountId, CUSTOMER_AUTH))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void shouldAllowInternalServiceToAdjustBalance() {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account();
+        account.setId(accountId);
+        account.setBalance(BigDecimal.valueOf(15));
+
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Account updated = accountService.adjustBalance(accountId, BigDecimal.valueOf(-5), INTERNAL_AUTH);
+
+        assertThat(updated.getBalance()).isEqualByComparingTo("10");
     }
 
     @Test

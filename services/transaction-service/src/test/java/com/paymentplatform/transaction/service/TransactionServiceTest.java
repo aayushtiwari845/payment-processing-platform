@@ -33,6 +33,7 @@ import static org.mockito.Mockito.when;
 class TransactionServiceTest {
 
     private static final RequestAuthContext INTERNAL_AUTH = new RequestAuthContext("internal", java.util.List.of(), true);
+    private static final RequestAuthContext CUSTOMER_AUTH = new RequestAuthContext("customer@example.com", java.util.List.of("CUSTOMER"), false);
 
     @Mock
     private TransactionRepository transactionRepository;
@@ -103,6 +104,34 @@ class TransactionServiceTest {
     }
 
     @Test
+    void shouldAllowCustomerToCreateTransactionForOwnedSourceAccount() {
+        CreateTransactionRequest request = buildRequest();
+        stubAccounts(request, "customer@example.com", "merchant@example.com", BigDecimal.valueOf(500));
+        when(transactionRepository.findByIdempotencyKey("txn-ownership")).thenReturn(Optional.empty());
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
+            Transaction transaction = invocation.getArgument(0);
+            if (transaction.getId() == null) {
+                transaction.setId(UUID.randomUUID());
+            }
+            return transaction;
+        });
+
+        Transaction transaction = transactionService.createTransaction(request, "txn-ownership", CUSTOMER_AUTH);
+
+        assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.PENDING);
+    }
+
+    @Test
+    void shouldRejectCustomerCreatingTransactionForAnotherUsersSourceAccount() {
+        CreateTransactionRequest request = buildRequest();
+        stubAccounts(request, "other@example.com", "merchant@example.com", BigDecimal.valueOf(500));
+        when(transactionRepository.findByIdempotencyKey("txn-forbidden")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> transactionService.createTransaction(request, "txn-forbidden", CUSTOMER_AUTH))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
     void shouldCompleteTransactionWhenFraudDecisionApproves() {
         Transaction pendingTransaction = buildPendingTransaction();
         when(transactionRepository.findById(pendingTransaction.getId())).thenReturn(Optional.of(pendingTransaction));
@@ -164,6 +193,18 @@ class TransactionServiceTest {
     }
 
     @Test
+    void shouldRejectCustomerApplyingFraudDecision() {
+        Transaction pendingTransaction = buildPendingTransaction();
+        when(transactionRepository.findById(pendingTransaction.getId())).thenReturn(Optional.of(pendingTransaction));
+
+        assertThatThrownBy(() -> transactionService.applyFraudDecision(
+                pendingTransaction.getId(),
+                new FraudDecisionRequest(true, 0.05, "baseline-rule-model", "approved"),
+                CUSTOMER_AUTH
+        )).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
     void shouldCompensateAndRejectWhenSettlementFailsAfterDebit() {
         Transaction pendingTransaction = buildPendingTransaction();
         when(transactionRepository.findById(pendingTransaction.getId())).thenReturn(Optional.of(pendingTransaction));
@@ -172,7 +213,11 @@ class TransactionServiceTest {
                 eq(pendingTransaction.getSourceAccountId()),
                 eq(pendingTransaction.getAmount().negate()),
                 argThat(reason -> reason.startsWith("transaction-debit:"))
-        )).thenReturn(accountSnapshotFor(pendingTransaction.getSourceAccountId(), BigDecimal.valueOf(100)));
+        )).thenReturn(accountSnapshotFor(
+                pendingTransaction.getSourceAccountId(),
+                "customer@example.com",
+                BigDecimal.valueOf(100)
+        ));
         when(accountClient.adjustBalance(
                 eq(pendingTransaction.getDestinationAccountId()),
                 eq(pendingTransaction.getAmount()),
@@ -182,7 +227,11 @@ class TransactionServiceTest {
                 eq(pendingTransaction.getSourceAccountId()),
                 eq(pendingTransaction.getAmount()),
                 argThat(reason -> reason.startsWith("transaction-compensation:"))
-        )).thenReturn(accountSnapshotFor(pendingTransaction.getSourceAccountId(), BigDecimal.valueOf(500)));
+        )).thenReturn(accountSnapshotFor(
+                pendingTransaction.getSourceAccountId(),
+                "customer@example.com",
+                BigDecimal.valueOf(500)
+        ));
 
         assertThatThrownBy(() -> transactionService.applyFraudDecision(
                 pendingTransaction.getId(),
@@ -202,8 +251,14 @@ class TransactionServiceTest {
     }
 
     private void stubActiveAccounts(CreateTransactionRequest request, BigDecimal sourceBalance) {
-        when(accountClient.getAccount(request.sourceAccountId())).thenReturn(accountSnapshotFor(request.sourceAccountId(), sourceBalance));
-        when(accountClient.getAccount(request.destinationAccountId())).thenReturn(accountSnapshotFor(request.destinationAccountId(), BigDecimal.valueOf(500)));
+        stubAccounts(request, "account@example.com", "destination@example.com", sourceBalance);
+    }
+
+    private void stubAccounts(CreateTransactionRequest request, String sourceEmail, String destinationEmail, BigDecimal sourceBalance) {
+        when(accountClient.getAccount(request.sourceAccountId()))
+                .thenReturn(accountSnapshotFor(request.sourceAccountId(), sourceEmail, sourceBalance));
+        when(accountClient.getAccount(request.destinationAccountId()))
+                .thenReturn(accountSnapshotFor(request.destinationAccountId(), destinationEmail, BigDecimal.valueOf(500)));
     }
 
     private Transaction buildPendingTransaction() {
@@ -218,11 +273,11 @@ class TransactionServiceTest {
         return transaction;
     }
 
-    private AccountSnapshot accountSnapshotFor(UUID accountId, BigDecimal balance) {
+    private AccountSnapshot accountSnapshotFor(UUID accountId, String email, BigDecimal balance) {
         return new AccountSnapshot(
                 accountId,
                 UUID.randomUUID(),
-                "account@example.com",
+                email,
                 "USD",
                 balance,
                 "ACTIVE",
