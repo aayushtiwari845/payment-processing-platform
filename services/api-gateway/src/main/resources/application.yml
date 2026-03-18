@@ -24,6 +24,30 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+security:
+  jwt:
+    secret: ${JWT_SECRET:change-me-change-me-change-me-change-me-1234567890}
+    issuer: ${JWT_ISSUER:payment-platform-gateway}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  users:
+    - username: admin
+      password: ${ADMIN_PASSWORD:admin123}
+      roles:
+        - ADMIN
+        - OPS
+    - username: ops
+      password: ${OPS_PASSWORD:ops123}
+      roles:
+        - OPS
+    - username: fraud-engine
+      password: ${FRAUD_PASSWORD:fraud123}
+      roles:
+        - FRAUD_ENGINE
+    - username: customer
+      password: ${CUSTOMER_PASSWORD:customer123}
+      roles:
+        - CUSTOMER
+
 management:
   endpoints:
     web:

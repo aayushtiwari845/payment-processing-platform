@@ -15,6 +15,7 @@ Repository scaffold for an event-driven payment platform built around Spring Boo
 - `fraud-detection-service` FastAPI starter
 - Prometheus-ready metrics across Java services plus `/metrics` for fraud detection
 - auto-provisioned Grafana datasource and starter dashboard
+- gateway-issued JWT authentication and route-level RBAC
 - persisted fraud decision metadata on transactions for auditability
 - Multi-stage Dockerfiles for the application services
 - Docker Compose infrastructure for PostgreSQL, Redis, ZooKeeper, Kafka, and Kafka UI
@@ -57,6 +58,7 @@ docker compose -f infrastructure/docker/docker-compose.yml up -d --build
 
 Prometheus is exposed at `http://localhost:9090` once the stack is running.
 Grafana is exposed at `http://localhost:3000` with `admin` / `admin`.
+Gateway tokens are issued at `POST /auth/token`.
 
 4. Run Java services from the repo root after Maven is available:
 
@@ -77,10 +79,35 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Gateway Auth
+
+Use the gateway to issue a JWT:
+
+```bash
+curl -X POST http://localhost:8080/auth/token ^
+  -H "Content-Type: application/json" ^
+  -d "{\"username\":\"admin\",\"password\":\"admin123\"}"
+```
+
+Demo users:
+
+- `admin` / `admin123`: `ADMIN`, `OPS`
+- `ops` / `ops123`: `OPS`
+- `fraud-engine` / `fraud123`: `FRAUD_ENGINE`
+- `customer` / `customer123`: `CUSTOMER`
+
+Current RBAC rules:
+
+- `GET /api/v1/accounts/**`: `ADMIN`, `OPS`
+- Mutating account routes: `ADMIN`
+- `POST /api/v1/transactions`: `ADMIN`, `CUSTOMER`
+- `GET /api/v1/transactions/**`: `ADMIN`, `OPS`, `CUSTOMER`
+- `POST /api/v1/transactions/{id}/fraud-decision`: `FRAUD_ENGINE`, `ADMIN`
+
 ## Immediate next steps
 
 1. Install Maven and a working Python interpreter.
 2. Add integration tests for REST, Kafka, and Postgres flows.
 3. Generate Maven wrappers if you want repo-local commands like `./mvnw`.
-4. Add authentication and RBAC at the gateway boundary.
+4. Propagate authenticated user identity into downstream authorization decisions.
 5. Decide whether the remaining services should be Java or Node.js before Week 2 and Week 3 expansion.
