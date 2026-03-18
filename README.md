@@ -14,6 +14,7 @@ Repository scaffold for an event-driven payment platform built around Spring Boo
 - `notification-service` Kafka consumer with mock email delivery retries
 - `fraud-detection-service` FastAPI starter
 - Prometheus-ready metrics across Java services plus `/metrics` for fraud detection
+- auto-provisioned Grafana datasource and starter dashboard
 - persisted fraud decision metadata on transactions for auditability
 - Multi-stage Dockerfiles for the application services
 - Docker Compose infrastructure for PostgreSQL, Redis, ZooKeeper, Kafka, and Kafka UI
@@ -55,6 +56,7 @@ docker compose -f infrastructure/docker/docker-compose.yml up -d --build
 ```
 
 Prometheus is exposed at `http://localhost:9090` once the stack is running.
+Grafana is exposed at `http://localhost:3000` with `admin` / `admin`.
 
 4. Run Java services from the repo root after Maven is available:
 
@@ -80,5 +82,5 @@ uvicorn app.main:app --reload --port 8000
 1. Install Maven and a working Python interpreter.
 2. Add integration tests for REST, Kafka, and Postgres flows.
 3. Generate Maven wrappers if you want repo-local commands like `./mvnw`.
-4. Add Grafana dashboards on top of the Prometheus metrics.
+4. Add authentication and RBAC at the gateway boundary.
 5. Decide whether the remaining services should be Java or Node.js before Week 2 and Week 3 expansion.
