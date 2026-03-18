@@ -9,7 +9,10 @@ from app.schemas import PredictionRequest, PredictionResponse
 from app.settings import settings
 
 
-transaction_client = TransactionServiceClient(settings.transaction_service_base_url)
+transaction_client = TransactionServiceClient(
+    settings.transaction_service_base_url,
+    settings.transaction_service_internal_token,
+)
 fraud_event_consumer = FraudEventConsumer(transaction_client)
 
 

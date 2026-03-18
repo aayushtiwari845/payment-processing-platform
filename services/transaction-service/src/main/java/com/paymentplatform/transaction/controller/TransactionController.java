@@ -1,5 +1,7 @@
 package com.paymentplatform.transaction.controller;
 
+import com.paymentplatform.transaction.auth.AuthContextFactory;
+import com.paymentplatform.transaction.auth.RequestAuthContext;
 import com.paymentplatform.transaction.dto.CreateTransactionRequest;
 import com.paymentplatform.transaction.dto.FraudDecisionRequest;
 import com.paymentplatform.transaction.dto.TransactionResponse;
@@ -22,30 +24,46 @@ import java.util.UUID;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final AuthContextFactory authContextFactory;
 
-    public TransactionController(TransactionService transactionService) {
+    public TransactionController(TransactionService transactionService, AuthContextFactory authContextFactory) {
         this.transactionService = transactionService;
+        this.authContextFactory = authContextFactory;
     }
 
     @GetMapping("/{transactionId}")
-    public TransactionResponse getTransaction(@PathVariable UUID transactionId) {
-        return TransactionResponse.from(transactionService.getTransaction(transactionId));
+    public TransactionResponse getTransaction(
+            @PathVariable UUID transactionId,
+            @RequestHeader(name = "X-Authenticated-User", required = false) String username,
+            @RequestHeader(name = "X-Authenticated-Roles", required = false) String roles,
+            @RequestHeader(name = "X-Internal-Service-Token", required = false) String internalToken
+    ) {
+        RequestAuthContext authContext = authContextFactory.fromHeaders(username, roles, internalToken);
+        return TransactionResponse.from(transactionService.getTransaction(transactionId, authContext));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse createTransaction(
             @Valid @RequestBody CreateTransactionRequest request,
-            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(name = "X-Authenticated-User", required = false) String username,
+            @RequestHeader(name = "X-Authenticated-Roles", required = false) String roles,
+            @RequestHeader(name = "X-Internal-Service-Token", required = false) String internalToken
     ) {
-        return TransactionResponse.from(transactionService.createTransaction(request, idempotencyKey));
+        RequestAuthContext authContext = authContextFactory.fromHeaders(username, roles, internalToken);
+        return TransactionResponse.from(transactionService.createTransaction(request, idempotencyKey, authContext));
     }
 
     @PostMapping("/{transactionId}/fraud-decision")
     public TransactionResponse applyFraudDecision(
             @PathVariable UUID transactionId,
-            @Valid @RequestBody FraudDecisionRequest request
+            @Valid @RequestBody FraudDecisionRequest request,
+            @RequestHeader(name = "X-Authenticated-User", required = false) String username,
+            @RequestHeader(name = "X-Authenticated-Roles", required = false) String roles,
+            @RequestHeader(name = "X-Internal-Service-Token", required = false) String internalToken
     ) {
-        return TransactionResponse.from(transactionService.applyFraudDecision(transactionId, request));
+        RequestAuthContext authContext = authContextFactory.fromHeaders(username, roles, internalToken);
+        return TransactionResponse.from(transactionService.applyFraudDecision(transactionId, request, authContext));
     }
 }

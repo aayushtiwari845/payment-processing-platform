@@ -1,5 +1,6 @@
 package com.paymentplatform.transaction.service;
 
+import com.paymentplatform.transaction.auth.RequestAuthContext;
 import com.paymentplatform.transaction.client.AccountClient;
 import com.paymentplatform.transaction.client.AccountSnapshot;
 import com.paymentplatform.transaction.domain.Transaction;
@@ -37,13 +38,19 @@ public class TransactionService {
         this.transactionMetrics = transactionMetrics;
     }
 
-    public Transaction getTransaction(UUID transactionId) {
+    public Transaction getTransaction(UUID transactionId, RequestAuthContext authContext) {
+        Transaction transaction = getTransactionById(transactionId);
+        authorizeRead(authContext, transaction);
+        return transaction;
+    }
+
+    public Transaction getTransactionById(UUID transactionId) {
         return transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
     }
 
     @Transactional
-    public Transaction createTransaction(CreateTransactionRequest request, String idempotencyKey) {
+    public Transaction createTransaction(CreateTransactionRequest request, String idempotencyKey, RequestAuthContext authContext) {
         if (request.sourceAccountId().equals(request.destinationAccountId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source and destination accounts must differ");
         }
@@ -54,11 +61,13 @@ public class TransactionService {
 
         Optional<Transaction> existingTransaction = transactionRepository.findByIdempotencyKey(idempotencyKey);
         if (existingTransaction.isPresent()) {
+            authorizeRead(authContext, existingTransaction.get());
             return existingTransaction.get();
         }
 
         AccountSnapshot sourceAccount = accountClient.getAccount(request.sourceAccountId());
         AccountSnapshot destinationAccount = accountClient.getAccount(request.destinationAccountId());
+        authorizeCreate(authContext, sourceAccount);
         validateAccounts(request, sourceAccount, destinationAccount);
 
         Transaction pendingTransaction = createPendingTransaction(request, idempotencyKey);
@@ -68,9 +77,10 @@ public class TransactionService {
     }
 
     @Transactional
-    public Transaction applyFraudDecision(UUID transactionId, FraudDecisionRequest request) {
+    public Transaction applyFraudDecision(UUID transactionId, FraudDecisionRequest request, RequestAuthContext authContext) {
         long start = System.nanoTime();
-        Transaction transaction = getTransaction(transactionId);
+        authorizeFraudDecision(authContext);
+        Transaction transaction = getTransactionById(transactionId);
         if (transaction.getStatus() == TransactionStatus.COMPLETED || transaction.getStatus() == TransactionStatus.REJECTED) {
             transactionMetrics.recordFraudDecision(System.nanoTime() - start);
             return transaction;
@@ -153,6 +163,38 @@ public class TransactionService {
         if (sourceAccount.balance().compareTo(request.amount()) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source account has insufficient balance");
         }
+    }
+
+    private void authorizeCreate(RequestAuthContext authContext, AccountSnapshot sourceAccount) {
+        if (authContext.internalService() || authContext.hasRole("ADMIN")) {
+            return;
+        }
+        if (authContext.hasRole("CUSTOMER") && sourceAccount.email().equalsIgnoreCase(authContext.username())) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to create this transaction");
+    }
+
+    private void authorizeRead(RequestAuthContext authContext, Transaction transaction) {
+        if (authContext.internalService() || authContext.hasRole("ADMIN") || authContext.hasRole("OPS")) {
+            return;
+        }
+        if (authContext.hasRole("CUSTOMER")) {
+            AccountSnapshot sourceAccount = accountClient.getAccount(transaction.getSourceAccountId());
+            AccountSnapshot destinationAccount = accountClient.getAccount(transaction.getDestinationAccountId());
+            if (sourceAccount.email().equalsIgnoreCase(authContext.username())
+                    || destinationAccount.email().equalsIgnoreCase(authContext.username())) {
+                return;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this transaction");
+    }
+
+    private void authorizeFraudDecision(RequestAuthContext authContext) {
+        if (authContext.internalService() || authContext.hasRole("FRAUD_ENGINE") || authContext.hasRole("ADMIN")) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to apply fraud decision");
     }
 
     private void compensateSourceAccount(Transaction transaction) {

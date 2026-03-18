@@ -47,6 +47,10 @@ security:
       password: ${CUSTOMER_PASSWORD:customer123}
       roles:
         - CUSTOMER
+    - username: customer@example.com
+      password: ${CUSTOMER_EMAIL_PASSWORD:customer123}
+      roles:
+        - CUSTOMER
 
 management:
   endpoints:

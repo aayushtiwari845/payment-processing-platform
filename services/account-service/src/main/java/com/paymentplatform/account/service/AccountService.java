@@ -1,5 +1,6 @@
 package com.paymentplatform.account.service;
 
+import com.paymentplatform.account.auth.RequestAuthContext;
 import com.paymentplatform.account.domain.Account;
 import com.paymentplatform.account.dto.AccountRequest;
 import com.paymentplatform.account.repository.AccountRepository;
@@ -26,12 +27,19 @@ public class AccountService {
         this.accountMetrics = accountMetrics;
     }
 
-    public List<Account> listAccounts() {
+    public List<Account> listAccounts(RequestAuthContext authContext) {
+        authorizeList(authContext);
         return accountRepository.findAll();
     }
 
+    public Account getAccount(UUID accountId, RequestAuthContext authContext) {
+        Account account = getAccountById(accountId);
+        authorizeRead(authContext, account);
+        return account;
+    }
+
     @Cacheable(cacheNames = "accounts", key = "#accountId")
-    public Account getAccount(UUID accountId) {
+    public Account getAccountById(UUID accountId) {
         long start = System.nanoTime();
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -39,7 +47,8 @@ public class AccountService {
         return account;
     }
 
-    public Account createAccount(AccountRequest request) {
+    public Account createAccount(AccountRequest request, RequestAuthContext authContext) {
+        authorizeMutation(authContext);
         String normalizedEmail = request.email().trim().toLowerCase();
         accountRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account email already exists");
@@ -57,8 +66,9 @@ public class AccountService {
     }
 
     @CachePut(cacheNames = "accounts", key = "#accountId")
-    public Account updateAccount(UUID accountId, AccountRequest request) {
-        Account account = getAccount(accountId);
+    public Account updateAccount(UUID accountId, AccountRequest request, RequestAuthContext authContext) {
+        authorizeMutation(authContext);
+        Account account = getAccountById(accountId);
         String normalizedEmail = request.email().trim().toLowerCase();
         if (accountRepository.existsByEmailAndIdNot(normalizedEmail, accountId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account email already exists");
@@ -76,13 +86,14 @@ public class AccountService {
 
     @Transactional
     @CachePut(cacheNames = "accounts", key = "#accountId")
-    public Account adjustBalance(UUID accountId, BigDecimal amountDelta) {
+    public Account adjustBalance(UUID accountId, BigDecimal amountDelta, RequestAuthContext authContext) {
+        authorizeMutation(authContext);
         if (amountDelta.compareTo(BigDecimal.ZERO) == 0) {
             accountMetrics.incrementRejectedBalanceAdjustment();
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Balance adjustment cannot be zero");
         }
 
-        Account account = getAccount(accountId);
+        Account account = getAccountById(accountId);
         BigDecimal updatedBalance = account.getBalance().add(amountDelta);
         if (updatedBalance.compareTo(BigDecimal.ZERO) < 0) {
             accountMetrics.incrementRejectedBalanceAdjustment();
@@ -96,12 +107,37 @@ public class AccountService {
     }
 
     @CacheEvict(cacheNames = "accounts", key = "#accountId")
-    public void deleteAccount(UUID accountId) {
-        Account account = getAccount(accountId);
+    public void deleteAccount(UUID accountId, RequestAuthContext authContext) {
+        authorizeMutation(authContext);
+        Account account = getAccountById(accountId);
         if (account.getBalance().compareTo(BigDecimal.ZERO) > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account with positive balance cannot be deleted");
         }
         accountRepository.delete(account);
         accountMetrics.incrementDeleted();
+    }
+
+    private void authorizeList(RequestAuthContext authContext) {
+        if (authContext.internalService() || authContext.hasRole("ADMIN") || authContext.hasRole("OPS")) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to list accounts");
+    }
+
+    private void authorizeRead(RequestAuthContext authContext, Account account) {
+        if (authContext.internalService() || authContext.hasRole("ADMIN") || authContext.hasRole("OPS")) {
+            return;
+        }
+        if (authContext.hasRole("CUSTOMER") && account.getEmail().equalsIgnoreCase(authContext.username())) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this account");
+    }
+
+    private void authorizeMutation(RequestAuthContext authContext) {
+        if (authContext.internalService() || authContext.hasRole("ADMIN")) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to modify accounts");
     }
 }

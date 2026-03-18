@@ -83,6 +83,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/payment_platform?currentSchema=account_service
       DB_USERNAME: payment_user
       DB_PASSWORD: payment_password
+      INTERNAL_SERVICE_TOKEN: payment-internal-token
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVER_PORT: 8081
@@ -105,8 +106,10 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/payment_platform?currentSchema=transaction_service
       DB_USERNAME: payment_user
       DB_PASSWORD: payment_password
+      INTERNAL_SERVICE_TOKEN: payment-internal-token
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ACCOUNT_SERVICE_BASE_URL: http://account-service:8081
+      ACCOUNT_SERVICE_INTERNAL_TOKEN: payment-internal-token
       SERVER_PORT: 8082
     ports:
       - "8082:8082"
@@ -145,6 +148,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ACCOUNT_SERVICE_BASE_URL: http://account-service:8081
+      ACCOUNT_SERVICE_INTERNAL_TOKEN: payment-internal-token
       SERVER_PORT: 8083
     ports:
       - "8083:8083"
@@ -198,6 +202,7 @@ services:
     environment:
       FRAUD_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       FRAUD_TRANSACTION_SERVICE_BASE_URL: http://transaction-service:8082
+      FRAUD_TRANSACTION_SERVICE_INTERNAL_TOKEN: payment-internal-token
       FRAUD_KAFKA_ENABLED: "true"
     ports:
       - "8000:8000"

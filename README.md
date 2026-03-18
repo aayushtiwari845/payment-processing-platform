@@ -16,6 +16,7 @@ Repository scaffold for an event-driven payment platform built around Spring Boo
 - Prometheus-ready metrics across Java services plus `/metrics` for fraud detection
 - auto-provisioned Grafana datasource and starter dashboard
 - gateway-issued JWT authentication and route-level RBAC
+- downstream services enforce propagated identity, with internal service-token bypass for trusted calls
 - persisted fraud decision metadata on transactions for auditability
 - Multi-stage Dockerfiles for the application services
 - Docker Compose infrastructure for PostgreSQL, Redis, ZooKeeper, Kafka, and Kafka UI
@@ -95,6 +96,7 @@ Demo users:
 - `ops` / `ops123`: `OPS`
 - `fraud-engine` / `fraud123`: `FRAUD_ENGINE`
 - `customer` / `customer123`: `CUSTOMER`
+- `customer@example.com` / `customer123`: `CUSTOMER`
 
 Current RBAC rules:
 
@@ -109,5 +111,5 @@ Current RBAC rules:
 1. Install Maven and a working Python interpreter.
 2. Add integration tests for REST, Kafka, and Postgres flows.
 3. Generate Maven wrappers if you want repo-local commands like `./mvnw`.
-4. Propagate authenticated user identity into downstream authorization decisions.
+4. Add automated integration coverage for gateway-issued JWT flows and internal service-token bypass.
 5. Decide whether the remaining services should be Java or Node.js before Week 2 and Week 3 expansion.

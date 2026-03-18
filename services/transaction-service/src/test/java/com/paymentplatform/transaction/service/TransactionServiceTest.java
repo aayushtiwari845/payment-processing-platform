@@ -1,5 +1,6 @@
 package com.paymentplatform.transaction.service;
 
+import com.paymentplatform.transaction.auth.RequestAuthContext;
 import com.paymentplatform.transaction.client.AccountClient;
 import com.paymentplatform.transaction.client.AccountSnapshot;
 import com.paymentplatform.transaction.domain.Transaction;
@@ -31,6 +32,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceTest {
 
+    private static final RequestAuthContext INTERNAL_AUTH = new RequestAuthContext("internal", java.util.List.of(), true);
+
     @Mock
     private TransactionRepository transactionRepository;
 
@@ -55,7 +58,7 @@ class TransactionServiceTest {
         existing.setStatus(TransactionStatus.PENDING);
         when(transactionRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(existing));
 
-        Transaction result = transactionService.createTransaction(request, idempotencyKey);
+        Transaction result = transactionService.createTransaction(request, idempotencyKey, INTERNAL_AUTH);
 
         assertThat(result).isSameAs(existing);
         verify(transactionRepository, never()).save(any(Transaction.class));
@@ -64,7 +67,7 @@ class TransactionServiceTest {
 
     @Test
     void shouldRejectMissingIdempotencyKey() {
-        assertThatThrownBy(() -> transactionService.createTransaction(buildRequest(), " "))
+        assertThatThrownBy(() -> transactionService.createTransaction(buildRequest(), " ", INTERNAL_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -73,7 +76,7 @@ class TransactionServiceTest {
         CreateTransactionRequest request = buildRequest();
         stubActiveAccounts(request, BigDecimal.ONE);
 
-        assertThatThrownBy(() -> transactionService.createTransaction(request, "txn-002"))
+        assertThatThrownBy(() -> transactionService.createTransaction(request, "txn-002", INTERNAL_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -90,7 +93,7 @@ class TransactionServiceTest {
             return transaction;
         });
 
-        Transaction transaction = transactionService.createTransaction(request, "txn-003");
+        Transaction transaction = transactionService.createTransaction(request, "txn-003", INTERNAL_AUTH);
 
         assertThat(transaction.getCurrency()).isEqualTo("USD");
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.PENDING);
@@ -125,7 +128,8 @@ class TransactionServiceTest {
 
         Transaction transaction = transactionService.applyFraudDecision(
                 pendingTransaction.getId(),
-                new FraudDecisionRequest(true, 0.05, "baseline-rule-model", "approved")
+                new FraudDecisionRequest(true, 0.05, "baseline-rule-model", "approved"),
+                INTERNAL_AUTH
         );
 
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
@@ -145,7 +149,8 @@ class TransactionServiceTest {
 
         Transaction transaction = transactionService.applyFraudDecision(
                 pendingTransaction.getId(),
-                new FraudDecisionRequest(false, 0.98, "baseline-rule-model", "high-risk-score")
+                new FraudDecisionRequest(false, 0.98, "baseline-rule-model", "high-risk-score"),
+                INTERNAL_AUTH
         );
 
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.REJECTED);
@@ -181,7 +186,8 @@ class TransactionServiceTest {
 
         assertThatThrownBy(() -> transactionService.applyFraudDecision(
                 pendingTransaction.getId(),
-                new FraudDecisionRequest(true, 0.05, "baseline-rule-model", "approved")
+                new FraudDecisionRequest(true, 0.05, "baseline-rule-model", "approved"),
+                INTERNAL_AUTH
         )).isInstanceOf(ResponseStatusException.class);
         verify(transactionEventPublisher).publish(any(Transaction.class));
     }

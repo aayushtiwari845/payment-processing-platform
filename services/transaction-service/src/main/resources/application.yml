@@ -23,6 +23,9 @@ spring:
 server:
   port: ${SERVER_PORT:8082}
 
+security:
+  internal-token: ${INTERNAL_SERVICE_TOKEN:payment-internal-token}
+
 management:
   endpoints:
     web:
@@ -32,3 +35,4 @@ management:
 clients:
   account-service:
     base-url: ${ACCOUNT_SERVICE_BASE_URL:http://localhost:8081}
+    internal-token: ${ACCOUNT_SERVICE_INTERNAL_TOKEN:payment-internal-token}

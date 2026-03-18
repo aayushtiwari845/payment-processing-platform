@@ -1,5 +1,6 @@
 package com.paymentplatform.account.service;
 
+import com.paymentplatform.account.auth.RequestAuthContext;
 import com.paymentplatform.account.domain.Account;
 import com.paymentplatform.account.domain.AccountStatus;
 import com.paymentplatform.account.dto.AccountRequest;
@@ -25,6 +26,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
 
+    private static final RequestAuthContext ADMIN_AUTH = new RequestAuthContext("admin", java.util.List.of("ADMIN"), false);
+
     @Mock
     private AccountRepository accountRepository;
 
@@ -47,7 +50,7 @@ class AccountServiceTest {
         when(accountRepository.findByEmail(request.email())).thenReturn(Optional.empty());
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Account created = accountService.createAccount(request);
+        Account created = accountService.createAccount(request, ADMIN_AUTH);
 
         assertThat(created.getEmail()).isEqualTo("alice@example.com");
         assertThat(created.getCurrency()).isEqualTo("USD");
@@ -65,7 +68,7 @@ class AccountServiceTest {
 
         when(accountRepository.findByEmail(request.email())).thenReturn(Optional.of(new Account()));
 
-        assertThatThrownBy(() -> accountService.createAccount(request))
+        assertThatThrownBy(() -> accountService.createAccount(request, ADMIN_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -78,7 +81,7 @@ class AccountServiceTest {
 
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> accountService.deleteAccount(accountId))
+        assertThatThrownBy(() -> accountService.deleteAccount(accountId, ADMIN_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -91,7 +94,7 @@ class AccountServiceTest {
 
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        accountService.deleteAccount(accountId);
+        accountService.deleteAccount(accountId, ADMIN_AUTH);
 
         verify(accountRepository).delete(account);
     }
@@ -106,7 +109,7 @@ class AccountServiceTest {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Account updated = accountService.adjustBalance(accountId, BigDecimal.valueOf(-4));
+        Account updated = accountService.adjustBalance(accountId, BigDecimal.valueOf(-4), ADMIN_AUTH);
 
         assertThat(updated.getBalance()).isEqualByComparingTo("6");
     }
@@ -120,7 +123,7 @@ class AccountServiceTest {
 
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> accountService.adjustBalance(accountId, BigDecimal.valueOf(-5)))
+        assertThatThrownBy(() -> accountService.adjustBalance(accountId, BigDecimal.valueOf(-5), ADMIN_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
         verify(accountRepository, never()).save(any(Account.class));
     }

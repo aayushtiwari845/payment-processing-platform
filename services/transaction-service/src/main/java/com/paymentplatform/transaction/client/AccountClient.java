@@ -15,17 +15,23 @@ import java.util.UUID;
 public class AccountClient {
 
     private final RestClient restClient;
+    private final String internalServiceToken;
 
-    public AccountClient(@Value("${clients.account-service.base-url}") String accountServiceBaseUrl) {
+    public AccountClient(
+            @Value("${clients.account-service.base-url}") String accountServiceBaseUrl,
+            @Value("${clients.account-service.internal-token}") String internalServiceToken
+    ) {
         this.restClient = RestClient.builder()
                 .baseUrl(accountServiceBaseUrl)
                 .build();
+        this.internalServiceToken = internalServiceToken;
     }
 
     public AccountSnapshot getAccount(UUID accountId) {
         try {
             AccountSnapshot account = restClient.get()
                     .uri("/api/v1/accounts/{accountId}", accountId)
+                    .header("X-Internal-Service-Token", internalServiceToken)
                     .retrieve()
                     .body(AccountSnapshot.class);
 
@@ -45,6 +51,7 @@ public class AccountClient {
         try {
             AccountSnapshot account = restClient.post()
                     .uri("/api/v1/accounts/{accountId}/balance-adjustments", accountId)
+                    .header("X-Internal-Service-Token", internalServiceToken)
                     .body(new BalanceAdjustmentCommand(amountDelta, reason))
                     .retrieve()
                     .body(AccountSnapshot.class);

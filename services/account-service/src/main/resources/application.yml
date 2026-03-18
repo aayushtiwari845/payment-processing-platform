@@ -25,6 +25,9 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+security:
+  internal-token: ${INTERNAL_SERVICE_TOKEN:payment-internal-token}
+
 management:
   endpoints:
     web:
