@@ -36,6 +36,9 @@ class AccountServiceTest {
     @Mock
     private AccountMetrics accountMetrics;
 
+    @Mock
+    private AccountAuditService accountAuditService;
+
     @InjectMocks
     private AccountService accountService;
 
@@ -56,6 +59,7 @@ class AccountServiceTest {
 
         assertThat(created.getEmail()).isEqualTo("alice@example.com");
         assertThat(created.getCurrency()).isEqualTo("USD");
+        verify(accountAuditService).logSuccess(org.mockito.ArgumentMatchers.eq("ACCOUNT_CREATE"), any(UUID.class), org.mockito.ArgumentMatchers.eq(ADMIN_AUTH), org.mockito.ArgumentMatchers.contains("email=alice@example.com"));
     }
 
     @Test
@@ -99,6 +103,7 @@ class AccountServiceTest {
         accountService.deleteAccount(accountId, ADMIN_AUTH);
 
         verify(accountRepository).delete(account);
+        verify(accountAuditService).logSuccess("ACCOUNT_DELETE", accountId, ADMIN_AUTH, "deleted");
     }
 
     @Test
@@ -114,6 +119,7 @@ class AccountServiceTest {
         Account updated = accountService.adjustBalance(accountId, BigDecimal.valueOf(-4), ADMIN_AUTH);
 
         assertThat(updated.getBalance()).isEqualByComparingTo("6");
+        verify(accountAuditService).logSuccess(org.mockito.ArgumentMatchers.eq("ACCOUNT_ADJUST_BALANCE"), org.mockito.ArgumentMatchers.eq(accountId), org.mockito.ArgumentMatchers.eq(ADMIN_AUTH), org.mockito.ArgumentMatchers.contains("balance=6"));
     }
 
     @Test
@@ -170,5 +176,6 @@ class AccountServiceTest {
         assertThatThrownBy(() -> accountService.adjustBalance(accountId, BigDecimal.valueOf(-5), ADMIN_AUTH))
                 .isInstanceOf(ResponseStatusException.class);
         verify(accountRepository, never()).save(any(Account.class));
+        verify(accountAuditService).logFailure("ACCOUNT_ADJUST_BALANCE", accountId, ADMIN_AUTH, "insufficient-funds");
     }
 }

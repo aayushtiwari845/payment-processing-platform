@@ -47,6 +47,9 @@ class TransactionServiceTest {
     @Mock
     private TransactionMetrics transactionMetrics;
 
+    @Mock
+    private TransactionAuditService transactionAuditService;
+
     @InjectMocks
     private TransactionService transactionService;
 
@@ -101,6 +104,7 @@ class TransactionServiceTest {
         verify(transactionRepository, times(1)).save(any(Transaction.class));
         verify(accountClient, never()).adjustBalance(any(UUID.class), any(BigDecimal.class), org.mockito.ArgumentMatchers.anyString());
         verify(transactionEventPublisher).publish(transaction);
+        verify(transactionAuditService).logSuccess("TRANSACTION_CREATE", transaction.getId(), INTERNAL_AUTH, "status=PENDING");
     }
 
     @Test
@@ -168,6 +172,7 @@ class TransactionServiceTest {
         assertThat(transaction.getFraudReason()).isEqualTo("approved");
         assertThat(transaction.getFraudDecisionAt()).isNotNull();
         verify(transactionEventPublisher).publish(transaction);
+        verify(transactionAuditService).logSuccess("TRANSACTION_FRAUD_DECISION", pendingTransaction.getId(), INTERNAL_AUTH, "approved-and-completed");
     }
 
     @Test
@@ -190,6 +195,7 @@ class TransactionServiceTest {
         assertThat(transaction.getFraudDecisionAt()).isNotNull();
         verify(accountClient, never()).adjustBalance(any(UUID.class), any(BigDecimal.class), org.mockito.ArgumentMatchers.anyString());
         verify(transactionEventPublisher).publish(transaction);
+        verify(transactionAuditService).logSuccess("TRANSACTION_FRAUD_DECISION", pendingTransaction.getId(), INTERNAL_AUTH, "rejected-by-fraud");
     }
 
     @Test
@@ -239,6 +245,12 @@ class TransactionServiceTest {
                 INTERNAL_AUTH
         )).isInstanceOf(ResponseStatusException.class);
         verify(transactionEventPublisher).publish(any(Transaction.class));
+        verify(transactionAuditService).logFailure(
+                org.mockito.ArgumentMatchers.eq("TRANSACTION_FRAUD_DECISION"),
+                org.mockito.ArgumentMatchers.eq(pendingTransaction.getId()),
+                org.mockito.ArgumentMatchers.eq(INTERNAL_AUTH),
+                org.mockito.ArgumentMatchers.contains("settlement-failed")
+        );
     }
 
     private CreateTransactionRequest buildRequest() {

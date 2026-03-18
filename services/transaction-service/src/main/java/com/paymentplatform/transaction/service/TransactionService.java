@@ -25,17 +25,20 @@ public class TransactionService {
     private final TransactionEventPublisher transactionEventPublisher;
     private final AccountClient accountClient;
     private final TransactionMetrics transactionMetrics;
+    private final TransactionAuditService transactionAuditService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
             TransactionEventPublisher transactionEventPublisher,
             AccountClient accountClient,
-            TransactionMetrics transactionMetrics
+            TransactionMetrics transactionMetrics,
+            TransactionAuditService transactionAuditService
     ) {
         this.transactionRepository = transactionRepository;
         this.transactionEventPublisher = transactionEventPublisher;
         this.accountClient = accountClient;
         this.transactionMetrics = transactionMetrics;
+        this.transactionAuditService = transactionAuditService;
     }
 
     public Transaction getTransaction(UUID transactionId, RequestAuthContext authContext) {
@@ -52,10 +55,12 @@ public class TransactionService {
     @Transactional
     public Transaction createTransaction(CreateTransactionRequest request, String idempotencyKey, RequestAuthContext authContext) {
         if (request.sourceAccountId().equals(request.destinationAccountId())) {
+            transactionAuditService.logFailure("TRANSACTION_CREATE", null, authContext, "same-account-transfer");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source and destination accounts must differ");
         }
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            transactionAuditService.logFailure("TRANSACTION_CREATE", null, authContext, "missing-idempotency-key");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Idempotency-Key header is required");
         }
 
@@ -73,6 +78,12 @@ public class TransactionService {
         Transaction pendingTransaction = createPendingTransaction(request, idempotencyKey);
         transactionEventPublisher.publish(pendingTransaction);
         transactionMetrics.incrementPending();
+        transactionAuditService.logSuccess(
+                "TRANSACTION_CREATE",
+                pendingTransaction.getId(),
+                authContext,
+                "status=" + pendingTransaction.getStatus()
+        );
         return pendingTransaction;
     }
 
@@ -83,6 +94,12 @@ public class TransactionService {
         Transaction transaction = getTransactionById(transactionId);
         if (transaction.getStatus() == TransactionStatus.COMPLETED || transaction.getStatus() == TransactionStatus.REJECTED) {
             transactionMetrics.recordFraudDecision(System.nanoTime() - start);
+            transactionAuditService.logSuccess(
+                    "TRANSACTION_FRAUD_DECISION",
+                    transaction.getId(),
+                    authContext,
+                    "already-final:" + transaction.getStatus()
+            );
             return transaction;
         }
         if (transaction.getStatus() != TransactionStatus.PENDING) {
@@ -98,6 +115,12 @@ public class TransactionService {
             transactionMetrics.incrementFraudRejected();
             transactionMetrics.incrementRejected();
             transactionMetrics.recordFraudDecision(System.nanoTime() - start);
+            transactionAuditService.logSuccess(
+                    "TRANSACTION_FRAUD_DECISION",
+                    rejectedTransaction.getId(),
+                    authContext,
+                    "rejected-by-fraud"
+            );
             return rejectedTransaction;
         }
 
@@ -121,6 +144,12 @@ public class TransactionService {
             transactionMetrics.incrementFraudApproved();
             transactionMetrics.incrementCompleted();
             transactionMetrics.recordFraudDecision(System.nanoTime() - start);
+            transactionAuditService.logSuccess(
+                    "TRANSACTION_FRAUD_DECISION",
+                    completedTransaction.getId(),
+                    authContext,
+                    "approved-and-completed"
+            );
             return completedTransaction;
         } catch (RuntimeException exception) {
             transaction.setStatus(TransactionStatus.REJECTED);
@@ -134,6 +163,12 @@ public class TransactionService {
             transactionMetrics.incrementFraudApproved();
             transactionMetrics.incrementRejected();
             transactionMetrics.recordFraudDecision(System.nanoTime() - start);
+            transactionAuditService.logFailure(
+                    "TRANSACTION_FRAUD_DECISION",
+                    rejectedTransaction.getId(),
+                    authContext,
+                    "settlement-failed:" + exception.getClass().getSimpleName()
+            );
             throw wrapTransactionFailure(exception);
         }
     }

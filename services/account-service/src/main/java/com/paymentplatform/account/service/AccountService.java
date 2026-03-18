@@ -21,10 +21,16 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final AccountMetrics accountMetrics;
+    private final AccountAuditService accountAuditService;
 
-    public AccountService(AccountRepository accountRepository, AccountMetrics accountMetrics) {
+    public AccountService(
+            AccountRepository accountRepository,
+            AccountMetrics accountMetrics,
+            AccountAuditService accountAuditService
+    ) {
         this.accountRepository = accountRepository;
         this.accountMetrics = accountMetrics;
+        this.accountAuditService = accountAuditService;
     }
 
     public List<Account> listAccounts(RequestAuthContext authContext) {
@@ -51,6 +57,7 @@ public class AccountService {
         authorizeMutation(authContext);
         String normalizedEmail = request.email().trim().toLowerCase();
         accountRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+            accountAuditService.logFailure("ACCOUNT_CREATE", null, authContext, "duplicate-email:" + normalizedEmail);
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account email already exists");
         });
 
@@ -62,6 +69,7 @@ public class AccountService {
         account.setStatus(request.status());
         Account savedAccount = accountRepository.save(account);
         accountMetrics.incrementCreated();
+        accountAuditService.logSuccess("ACCOUNT_CREATE", savedAccount.getId(), authContext, "email=" + savedAccount.getEmail());
         return savedAccount;
     }
 
@@ -71,6 +79,7 @@ public class AccountService {
         Account account = getAccountById(accountId);
         String normalizedEmail = request.email().trim().toLowerCase();
         if (accountRepository.existsByEmailAndIdNot(normalizedEmail, accountId)) {
+            accountAuditService.logFailure("ACCOUNT_UPDATE", accountId, authContext, "duplicate-email:" + normalizedEmail);
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account email already exists");
         }
 
@@ -81,6 +90,7 @@ public class AccountService {
         account.setStatus(request.status());
         Account savedAccount = accountRepository.save(account);
         accountMetrics.incrementUpdated();
+        accountAuditService.logSuccess("ACCOUNT_UPDATE", savedAccount.getId(), authContext, "status=" + savedAccount.getStatus());
         return savedAccount;
     }
 
@@ -90,6 +100,7 @@ public class AccountService {
         authorizeMutation(authContext);
         if (amountDelta.compareTo(BigDecimal.ZERO) == 0) {
             accountMetrics.incrementRejectedBalanceAdjustment();
+            accountAuditService.logFailure("ACCOUNT_ADJUST_BALANCE", accountId, authContext, "zero-delta");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Balance adjustment cannot be zero");
         }
 
@@ -97,12 +108,19 @@ public class AccountService {
         BigDecimal updatedBalance = account.getBalance().add(amountDelta);
         if (updatedBalance.compareTo(BigDecimal.ZERO) < 0) {
             accountMetrics.incrementRejectedBalanceAdjustment();
+            accountAuditService.logFailure("ACCOUNT_ADJUST_BALANCE", accountId, authContext, "insufficient-funds");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient funds for balance adjustment");
         }
 
         account.setBalance(updatedBalance);
         Account savedAccount = accountRepository.save(account);
         accountMetrics.incrementBalanceAdjustment();
+        accountAuditService.logSuccess(
+                "ACCOUNT_ADJUST_BALANCE",
+                savedAccount.getId(),
+                authContext,
+                "delta=" + amountDelta + ",balance=" + savedAccount.getBalance()
+        );
         return savedAccount;
     }
 
@@ -111,10 +129,12 @@ public class AccountService {
         authorizeMutation(authContext);
         Account account = getAccountById(accountId);
         if (account.getBalance().compareTo(BigDecimal.ZERO) > 0) {
+            accountAuditService.logFailure("ACCOUNT_DELETE", accountId, authContext, "positive-balance");
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account with positive balance cannot be deleted");
         }
         accountRepository.delete(account);
         accountMetrics.incrementDeleted();
+        accountAuditService.logSuccess("ACCOUNT_DELETE", accountId, authContext, "deleted");
     }
 
     private void authorizeList(RequestAuthContext authContext) {
