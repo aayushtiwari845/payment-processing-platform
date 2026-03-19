@@ -48,10 +48,13 @@ class GatewayAuthIntegrationTest {
     void shouldRejectProtectedRouteWithoutToken() {
         webTestClient.get()
                 .uri("/api/v1/accounts/123")
+                .header("X-Correlation-Id", "corr-unauthorized-123")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("X-Correlation-Id", "corr-unauthorized-123")
                 .expectBody()
-                .jsonPath("$.message").isEqualTo("Missing or invalid Authorization header");
+                .jsonPath("$.message").isEqualTo("Missing or invalid Authorization header")
+                .jsonPath("$.correlationId").isEqualTo("corr-unauthorized-123");
     }
 
     @Test

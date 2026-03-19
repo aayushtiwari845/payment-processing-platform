@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.paymentplatform.gateway.auth.AuthenticatedUser;
 import com.paymentplatform.gateway.auth.JwtService;
+import com.paymentplatform.gateway.logging.CorrelationIdFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
@@ -45,18 +47,18 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
         String authorizationHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            return writeError(exchange.getResponse(), HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
+            return writeError(exchange, HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
         }
 
         AuthenticatedUser authenticatedUser;
         try {
             authenticatedUser = jwtService.parseToken(authorizationHeader.substring(7));
         } catch (RuntimeException exception) {
-            return writeError(exchange.getResponse(), HttpStatus.UNAUTHORIZED, "Invalid or expired token");
+            return writeError(exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
 
         if (!routeAuthorizationService.isAllowed(request, authenticatedUser.roles())) {
-            return writeError(exchange.getResponse(), HttpStatus.FORBIDDEN, "Access denied");
+            return writeError(exchange, HttpStatus.FORBIDDEN, "Access denied");
         }
 
         ServerHttpRequest mutatedRequest = request.mutate()
@@ -71,18 +73,27 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         return -100;
     }
 
-    private Mono<Void> writeError(ServerHttpResponse response, HttpStatus status, String message) {
+    private Mono<Void> writeError(ServerWebExchange exchange, HttpStatus status, String message) {
+        ServerHttpResponse response = exchange.getResponse();
+        String correlationId = exchange.getRequest().getHeaders().getFirst(CorrelationIdFilter.CORRELATION_ID_HEADER);
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
         response.setStatusCode(status);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        response.getHeaders().set(CorrelationIdFilter.CORRELATION_ID_HEADER, correlationId);
         byte[] body;
         try {
             body = objectMapper.writeValueAsBytes(Map.of(
                     "status", status.value(),
                     "error", status.getReasonPhrase(),
-                    "message", message
+                    "message", message,
+                    "correlationId", correlationId
             ));
         } catch (JsonProcessingException exception) {
-            body = ("{\"status\":" + status.value() + ",\"message\":\"" + message + "\"}")
+            body = ("{\"status\":" + status.value()
+                    + ",\"message\":\"" + message
+                    + "\",\"correlationId\":\"" + correlationId + "\"}")
                     .getBytes(StandardCharsets.UTF_8);
         }
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));

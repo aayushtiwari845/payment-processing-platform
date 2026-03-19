@@ -1,5 +1,6 @@
 package com.paymentplatform.transaction.exception;
 
+import com.paymentplatform.transaction.logging.CorrelationIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,7 +25,8 @@ public class GlobalExceptionHandler {
                 status.value(),
                 status.getReasonPhrase(),
                 exception.getReason(),
-                request.getRequestURI()
+                request.getRequestURI(),
+                CorrelationIdFilter.getCorrelationId(request)
         ));
     }
 
@@ -43,7 +45,8 @@ public class GlobalExceptionHandler {
                 status.value(),
                 status.getReasonPhrase(),
                 message,
-                request.getRequestURI()
+                request.getRequestURI(),
+                CorrelationIdFilter.getCorrelationId(request)
         ));
     }
 
@@ -58,7 +61,8 @@ public class GlobalExceptionHandler {
                 status.value(),
                 status.getReasonPhrase(),
                 "Unexpected server error",
-                request.getRequestURI()
+                request.getRequestURI(),
+                CorrelationIdFilter.getCorrelationId(request)
         ));
     }
 }

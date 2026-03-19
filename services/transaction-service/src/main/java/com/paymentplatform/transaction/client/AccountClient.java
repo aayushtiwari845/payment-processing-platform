@@ -1,5 +1,7 @@
 package com.paymentplatform.transaction.client;
 
+import com.paymentplatform.transaction.logging.CorrelationIdFilter;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -29,11 +31,11 @@ public class AccountClient {
 
     public AccountSnapshot getAccount(UUID accountId) {
         try {
-            AccountSnapshot account = restClient.get()
+            RestClient.RequestHeadersSpec<?> request = restClient.get()
                     .uri("/api/v1/accounts/{accountId}", accountId)
-                    .header("X-Internal-Service-Token", internalServiceToken)
-                    .retrieve()
-                    .body(AccountSnapshot.class);
+                    .header("X-Internal-Service-Token", internalServiceToken);
+            addCorrelationId(request);
+            AccountSnapshot account = request.retrieve().body(AccountSnapshot.class);
 
             if (account == null) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service returned empty response");
@@ -49,9 +51,11 @@ public class AccountClient {
 
     public AccountSnapshot adjustBalance(UUID accountId, BigDecimal amountDelta, String reason) {
         try {
-            AccountSnapshot account = restClient.post()
+            RestClient.RequestBodySpec request = restClient.post()
                     .uri("/api/v1/accounts/{accountId}/balance-adjustments", accountId)
-                    .header("X-Internal-Service-Token", internalServiceToken)
+                    .header("X-Internal-Service-Token", internalServiceToken);
+            addCorrelationId(request);
+            AccountSnapshot account = request
                     .body(new BalanceAdjustmentCommand(amountDelta, reason))
                     .retrieve()
                     .body(AccountSnapshot.class);
@@ -65,6 +69,13 @@ public class AccountClient {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account balance adjustment failed", exception);
         } catch (RestClientException exception) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable", exception);
+        }
+    }
+
+    private void addCorrelationId(RestClient.RequestHeadersSpec<?> request) {
+        String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_ATTRIBUTE);
+        if (correlationId != null && !correlationId.isBlank()) {
+            request.header(CorrelationIdFilter.CORRELATION_ID_HEADER, correlationId);
         }
     }
 }
