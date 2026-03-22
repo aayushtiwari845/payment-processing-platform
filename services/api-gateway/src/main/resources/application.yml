@@ -14,12 +14,24 @@ spring:
             - Path=/api/v1/accounts/**
           filters:
             - CircuitBreaker=accountCircuitBreaker
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@rateLimitKeyResolver}"
+                redis-rate-limiter.replenishRate: ${RATE_LIMIT_ACCOUNT_REPLENISH_RATE:30}
+                redis-rate-limiter.burstCapacity: ${RATE_LIMIT_ACCOUNT_BURST_CAPACITY:60}
+                redis-rate-limiter.requestedTokens: 1
         - id: transaction-service
           uri: ${TRANSACTION_SERVICE_URL:http://localhost:8082}
           predicates:
             - Path=/api/v1/transactions/**
           filters:
             - CircuitBreaker=transactionCircuitBreaker
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@rateLimitKeyResolver}"
+                redis-rate-limiter.replenishRate: ${RATE_LIMIT_TRANSACTION_REPLENISH_RATE:15}
+                redis-rate-limiter.burstCapacity: ${RATE_LIMIT_TRANSACTION_BURST_CAPACITY:30}
+                redis-rate-limiter.requestedTokens: 1
 
 server:
   port: ${SERVER_PORT:8080}
@@ -57,6 +69,14 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+
+rate-limit:
+  account:
+    replenish-rate: ${RATE_LIMIT_ACCOUNT_REPLENISH_RATE:30}
+    burst-capacity: ${RATE_LIMIT_ACCOUNT_BURST_CAPACITY:60}
+  transaction:
+    replenish-rate: ${RATE_LIMIT_TRANSACTION_REPLENISH_RATE:15}
+    burst-capacity: ${RATE_LIMIT_TRANSACTION_BURST_CAPACITY:30}
 
 resilience4j:
   circuitbreaker:
